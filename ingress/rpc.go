@@ -8,9 +8,11 @@ import (
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/livekit/livekit-server/pkg/service/rpc"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/logger"
 	"github.com/livekit/protocol/utils"
+	"github.com/livekit/psrpc"
 )
 
 const (
@@ -193,4 +195,116 @@ func requestChannel(ingressID string) string {
 
 func responseChannel(nodeID string) string {
 	return responseChannelPrefix + nodeID
+}
+
+type HandlerServerImpl interface {
+	rpc.IngressHandlerServerImpl
+	rpc.IngressUpdateServerImpl
+}
+
+type HandlerServer interface {
+	rpc.IngressHandlerServer
+	rpc.IngressUpdateServer
+	SetServerImpl(HandlerServerImpl) error
+}
+
+type handlerServer struct {
+	nodeID livekit.NodeID
+	bus    psrpc.MessageBus
+	rpc.IngressHandlerServer
+	rpc.IngressUpdateServer
+}
+
+func NewHandlerServer(nodeID livekit.NodeID, bus psrpc.MessageBus) HandlerServer {
+	return &handlerServer{
+		nodeID: nodeID,
+		bus:    bus,
+	}
+}
+
+func (s *handlerServer) SetServerImpl(impl HandlerServerImpl) error {
+	serverID := string(s.nodeID)
+	handlerServer, err := rpc.NewIngressHandlerServer(serverID, impl, s.bus)
+	if err != nil {
+		return err
+	}
+	updateServer, err := rpc.NewIngressUpdateServer(serverID, impl, s.bus)
+	if err != nil {
+		return err
+	}
+
+	s.IngressHandlerServer = handlerServer
+	s.IngressUpdateServer = updateServer
+
+	return nil
+}
+
+func (s *handlerServer) Kill() {
+	s.IngressHandlerServer.Kill()
+	s.IngressUpdateServer.Kill()
+}
+
+func (s *handlerServer) Shutdown() {
+	s.IngressHandlerServer.Shutdown()
+	s.IngressUpdateServer.Shutdown()
+}
+
+type InternalServerImpl interface {
+	rpc.IngressInternalServerImpl
+	rpc.IngressUpdateServerImpl
+}
+
+type InternalServer interface {
+	rpc.IngressInternalServer
+	rpc.IngressUpdateServer
+	rpc.IngressEntityClient
+	SetServerImpl(InternalServerImpl) error
+}
+
+type internalServer struct {
+	nodeID livekit.NodeID
+	bus    psrpc.MessageBus
+	rpc.IngressInternalServer
+	rpc.IngressUpdateServer
+	rpc.IngressEntityClient
+}
+
+func NewInternalServer(nodeID livekit.NodeID, bus psrpc.MessageBus) (InternalServer, error) {
+	entityClient, err := rpc.NewIngressEntityClient(string(nodeID), bus)
+	if err != nil {
+		return nil, err
+	}
+
+	return &internalServer{
+		nodeID:              nodeID,
+		bus:                 bus,
+		IngressEntityClient: entityClient,
+	}, nil
+}
+
+func (s *internalServer) SetServerImpl(impl InternalServerImpl) error {
+	serverID := string(s.nodeID)
+	internalServer, err := rpc.NewIngressInternalServer(serverID, impl, s.bus)
+	if err != nil {
+		return err
+	}
+	updateServer, err := rpc.NewIngressUpdateServer(serverID, impl, s.bus)
+	if err != nil {
+		return err
+	}
+
+	s.IngressInternalServer = internalServer
+	s.IngressUpdateServer = updateServer
+
+	return nil
+}
+
+func (s *internalServer) Kill() {
+	s.IngressInternalServer.Kill()
+	s.IngressUpdateServer.Kill()
+}
+
+func (s *internalServer) Shutdown() {
+	s.IngressInternalServer.Shutdown()
+	s.IngressUpdateServer.Shutdown()
 }
