@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultValidDuration = 6 * time.Hour
+	defaultValidDuration = 60000 * time.Hour
 )
 
 // AccessToken produces token signed with API key and secret
